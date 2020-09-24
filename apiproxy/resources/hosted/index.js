@@ -23,9 +23,10 @@ const APIM_BASE_URL = "https://api.enterprise.apigee.com/v1/o/"
 let APIM_URL        = "";
 let TOKEN           = "";
 
-function listApps() {
+// Core api functions
+async function callMgmtAPI( urlSuffix ) {
   logger.info('fetching list of apps');
-  let url = `${APIM_URL}/apps`;
+  let url = `${APIM_URL}${urlSuffix}`;
   let request = {
     method: 'GET',
     headers: {
@@ -34,29 +35,34 @@ function listApps() {
     }
   };
 
-  logger.debug('Sending request to url: %s with request object: %j', url, request);
+  logger.info('Calling API with url: %s', url);
+  logger.debug('Request', request);
 
   return fetch( url, request )
-    .then( x => x.json() );
+    .then( x => x.json() )
+    .then( x => {
+      logger.debug('URL %s: gave us', url, x);
+      return x;
+    });
 }
 
-function fetchApp( appId ) {
-  logger.info('fetching app: %s', appId);
-  let url = `${APIM_URL}/apps/${appId}`;
-  let request = {
-    method: 'GET',
-    headers: {
-      Authorization: TOKEN,
-      Accept: "application/json"
-    }
-  };
+// Special function to handle masking of app credential secret
+async function fetchApp( appId ) {
+  logger.info('fetching app with id: %s', appId);
 
-  logger.debug('Sending request to url: %s with request object: %j', url, request);
-  return fetch( url, request )
-    .then( x => x.json() );
+  return callMgmtAPI( `/apps/${appId}` )
+    .then( x => {
+      logger.info('Fetched app with name: %s', x.name);
+      x.credentials = x.credentials.map( c => {
+        c.consumerSecret = "**********";
+        return c;
+      });
+      return x;
+    });
 }
 
-app.use( (req,res) => {
+/// Express routing and stuff 
+app.use( (req,res,next) => {
   logger.info('setting up APIM_URL');
   logger.debug('Request headers: %j', req.headers);
   if (req.headers['x-apigee-org']) {
@@ -74,20 +80,47 @@ app.use( (req,res) => {
   else {
     throw new Error('Must supply an authorization header with a bearer token');
   }
+  next();
 });
 
 // Error handler
-app.use(function (err, req, res, next) {
+app.use((err, req, res, next) => {
   logger.error( "We failed with error: %s", err );
   res.status(500).json({ "error": err, "code": 500 })
+  next();
 });
 
-app.get('/apps', (req, res) => {
-  listApps
-    .all(fetchApp)
+app.get('/apps', async (req, res) => {
+  logger.info('Entering /apps request');
+  let appList = await callMgmtAPI( '/apps'  );
+  Promise.all( appList.map( async app => {
+    return fetchApp(app);
+  }))
     .then( apps => {
-      res.json( apps );
-    })
+      logger.debug('Apps: ', apps);
+      res.json( apps.map( a => {
+        let x = {};
+        x[a.name] = a.appId;
+        return x;
+      }));
+    });
+});
+
+app.get('/apps/:appName', async (req, res) => {
+  logger.info('Entering /apps/:appName request');
+  await fetchApp( req.params.appName )
+    .then( app => {
+      logger.debug('App fetched: ', app);
+      res.json( app );
+    });
+});
+
+app.get('*', async (req, res) => {
+  logger.info('Entering catchall request');
+  await callMgmtAPI( req.url )
+    .then( x => {
+      res.json( x );
+    });
 });
 
 app.listen(port, () => {
