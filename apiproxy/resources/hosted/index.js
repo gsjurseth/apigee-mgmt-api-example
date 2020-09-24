@@ -1,5 +1,6 @@
 const express = require('express'),
       fetch   = require('node-fetch'),
+      moment  = require('moment'),
       winston = require('winston');
 
 const app     = express();
@@ -46,19 +47,21 @@ async function callMgmtAPI( urlSuffix ) {
     });
 }
 
+function washApp(app) {
+  logger.info('about to wipe credentials from app: %s', app.name);
+  app.credentials = app.credentials.map( c => {
+    c.consumerSecret = "**********";
+    return c;
+  });
+  return app;
+}
+
 // Special function to handle masking of app credential secret
 async function fetchApp( appId ) {
   logger.info('fetching app with id: %s', appId);
 
   return callMgmtAPI( `/apps/${appId}` )
-    .then( x => {
-      logger.info('Fetched app with name: %s', x.name);
-      x.credentials = x.credentials.map( c => {
-        c.consumerSecret = "**********";
-        return c;
-      });
-      return x;
-    });
+    .then(washApp)
 }
 
 /// Express routing and stuff 
@@ -100,7 +103,8 @@ app.get('/apps', async (req, res) => {
       logger.debug('Apps: ', apps);
       res.json( apps.map( a => {
         let x = {};
-        x[a.name] = a.appId;
+        x.name = a.name
+        x.appId = a.appId;
         return x;
       }));
     });
@@ -108,10 +112,35 @@ app.get('/apps', async (req, res) => {
 
 app.get('/apps/:appName', async (req, res) => {
   logger.info('Entering /apps/:appName request');
-  await fetchApp( req.params.appName )
+  //await fetchApp( req.params.appName )
+  await callMgmtAPI( `/apps/${req.params.appName}` )
+    .then(washApp)
+    .then(app => res.json(app));
+});
+
+app.get('/developers/:developer/apps/:appName', async (req, res) => {
+  logger.info('Entering /developers/%s/apps/%s request', req.params.developer, req.params.appName);
+  await callMgmtAPI( `/developers/${req.params.developer}/apps/${req.params.appName}` )
+    .then(washApp)
     .then( app => {
       logger.debug('App fetched: ', app);
       res.json( app );
+    });
+});
+
+app.get('/environments/:env/stats/:dimension', async (req, res) => {
+  logger.info('Entering %s request', req.url);
+  let hours = parseInt(req.query.hours);
+  let now = moment();
+  let end = now.subtract(1,"hours").format("MM/DD/YYYY H:MM");
+  let start = now.subtract(hours, "hours").format("MM/DD/YYYY H:MM")
+  let timeRange = `${start}~${end}`;
+  let encTR = encodeURIComponent(timeRange);
+
+  await callMgmtAPI( `/e/${req.params.env}/stats/${req.params.dimension}?select=${req.query.select}&timeRange=${encTR}&timeUnit=${req.query.timeUnit}` )
+    .then( stats => {
+      logger.debug('Stats fetched: ', stats);
+      res.json( stats );
     });
 });
 
