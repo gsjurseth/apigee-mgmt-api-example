@@ -5,6 +5,7 @@
       <Step>
         <Name>AM.setOrgHeader</Name>
       </Step>
+    </Request>
     <Response/>
   </PreFlow>
   <Flows/>
