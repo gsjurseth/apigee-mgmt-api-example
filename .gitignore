@@ -67,4 +67,4 @@ yarn.json
 
 certs
 
-apiproxy/resources/hosted/node_modules
+node_modules
