@@ -112,7 +112,6 @@ app.get('/apps', async (req, res) => {
 
 app.get('/apps/:appName', async (req, res) => {
   logger.info('Entering /apps/:appName request');
-  //await fetchApp( req.params.appName )
   await callMgmtAPI( `/apps/${req.params.appName}` )
     .then(washApp)
     .then(app => res.json(app));
