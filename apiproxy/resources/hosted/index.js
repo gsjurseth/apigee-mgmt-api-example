@@ -143,7 +143,7 @@ app.get('/environments/:env/stats/:dimension', async (req, res) => {
     });
 });
 
-app.get('*', async (req, res) => {
+app.all('*', async (req, res) => {
   logger.info('Entering catchall request');
   await callMgmtAPI( req.url )
     .then( x => {
